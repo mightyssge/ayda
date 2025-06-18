@@ -108,7 +108,7 @@ int main() {
     for (int i = 0; i < num_items; ++i) {
         if (best.x[i]) cout << i << " ";
     }
-    cout << endl;
+    cout << endl ;
 
     return 0;
 }
