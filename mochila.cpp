@@ -1,114 +1,183 @@
 #include <iostream>
 #include <vector>
-#include <random>
-#include <cmath>
+#include <cstdlib>
 #include <ctime>
+#include <chrono>
 #include <algorithm>
+#include <numeric>
+#include <random> 
 
 using namespace std;
+using namespace chrono;
 
+random_device rd;
+mt19937 g(rd());
+
+
+// Estructura del objeto
 struct Item {
+    int id;
     int value;
     int weight;
 };
 
-struct Solution {
-    vector<int> x;
-    int fitness;
-};
-
-// Parámetros
-const int num_items = 10;
-const int capacity = 35;
-const int num_nests = 15;
-const int max_iter = 100;
+// Parámetros del algoritmo
+const int n_nests = 15;
 const double pa = 0.25;
+const int max_generations = 50;
 
-// Items ejemplo
-vector<Item> items = {
-    {12, 7}, {10, 5}, {8, 6}, {11, 7}, {14, 3},
-    {7, 2}, {9, 4}, {13, 6}, {15, 8}, {6, 3}
-};
+// Variables globales
+int n_items;
+int capacity;
+vector<Item> items;
 
-// Random
-mt19937 rng(time(0));
-uniform_real_distribution<double> uniform(0.0, 1.0);
-uniform_int_distribution<int> binary(0, 1);
-
-// Fitness function
-int evaluate(const vector<int>& x) {
-    int total_value = 0, total_weight = 0;
-    for (int i = 0; i < num_items; ++i) {
+// Funciones auxiliares
+int fitness(const vector<int>& x) {
+    int total_weight = 0, total_value = 0;
+    for (int i = 0; i < n_items; ++i) {
         if (x[i]) {
+            total_weight += items[i].weight;
             total_value += items[i].value;
+        }
+    }
+    return (total_weight <= capacity) ? total_value : 0;
+}
+
+vector<int> random_solution() {
+    vector<int> x(n_items, 0);
+    int total_weight = 0;
+    vector<int> indices(n_items);
+    iota(indices.begin(), indices.end(), 0);
+    shuffle(indices.begin(), indices.end(), g);
+
+    for (int i : indices) {
+        if (total_weight + items[i].weight <= capacity) {
+            x[i] = 1;
             total_weight += items[i].weight;
         }
     }
-    if (total_weight > capacity) return 0;
-    return total_value;
+    return x;
 }
 
-// Lévy Flight para soluciones binarias
-vector<int> levy_binary(const vector<int>& x) {
-    vector<int> new_x = x;
-    for (int i = 0; i < num_items; ++i) {
-        if (uniform(rng) < 0.5) {
-            new_x[i] = 1 - x[i];  // flip bit con probabilidad
+vector<int> levy_mutation(const vector<int>& x) {
+    vector<int> x_new = x;
+    for (int i = 0; i < n_items; ++i) {
+        if ((double)rand() / RAND_MAX < 1.0 / n_items)
+            x_new[i] = 1 - x[i];
+    }
+
+    int total_weight = 0;
+    for (int i = 0; i < n_items; ++i)
+        if (x_new[i]) total_weight += items[i].weight;
+
+    if (total_weight > capacity) {
+        vector<int> indices(n_items);
+        iota(indices.begin(), indices.end(), 0);
+        shuffle(indices.begin(), indices.end(), g);
+
+        for (int i : indices) {
+            if (x_new[i]) {
+                x_new[i] = 0;
+                total_weight -= items[i].weight;
+                if (total_weight <= capacity) break;
+            }
         }
     }
-    return new_x;
+
+    return x_new;
 }
 
-// Inicialización aleatoria de nidos
-vector<Solution> initialize_nests() {
-    vector<Solution> nests;
-    for (int i = 0; i < num_nests; ++i) {
-        vector<int> x(num_items);
-        for (int j = 0; j < num_items; ++j)
-            x[j] = binary(rng);
-        nests.push_back({x, evaluate(x)});
+void initialize_items(int size) {
+    items.clear();
+    for (int i = 0; i < size; ++i) {
+        int val = rand() % 100 + 1;
+        int wgt = rand() % 50 + 1;
+        items.push_back({i + 1, val, wgt});
     }
-    return nests;
+    capacity = size * 10 / 3; // capacidad proporcional
+    n_items = size;
+    cout << "\nItems generados (ID, valor, peso):" << endl;
+    for (int i = 0; i < n_items; ++i) {
+        cout << "Item " << items[i].id << ": Valor = " << items[i].value << ", Peso = " << items[i].weight << endl;
+    }
 }
 
 int main() {
-    vector<Solution> nests = initialize_nests();
-    Solution best = *max_element(nests.begin(), nests.end(),
-                                 [](const Solution& a, const Solution& b) {
-                                     return a.fitness < b.fitness;
-                                 });
+    srand(time(0));
 
-    for (int iter = 0; iter < max_iter; ++iter) {
-        for (int i = 0; i < num_nests; ++i) {
-            vector<int> new_x = levy_binary(nests[i].x);
-            int new_fitness = evaluate(new_x);
+    cout << "\n--- CUCKOO SEARCH PARA PROBLEMA DE LA MOCHILA ---\n";
+    cout << "Elige el tamaño del problema:\n1. 10 objetos\n2. 100 objetos\n3. 1000 objetos\nOpcion: ";
 
-            if (new_fitness > nests[i].fitness) {
-                nests[i] = {new_x, new_fitness};
-                if (new_fitness > best.fitness) {
-                    best = nests[i];
-                }
+    int opcion;
+    cin >> opcion;
+    if (opcion == 1) initialize_items(10);
+    else if (opcion == 2) initialize_items(100);
+    else initialize_items(1000);
+
+    cout << "\nCapacidad de la mochila: " << capacity << endl;
+
+    vector<vector<int>> nests(n_nests);
+    vector<int> scores(n_nests);
+
+    for (int i = 0; i < n_nests; ++i) {
+        nests[i] = random_solution();
+        scores[i] = fitness(nests[i]);
+    }
+
+    auto start = high_resolution_clock::now();
+
+    for (int gen = 0; gen < max_generations; ++gen) {
+        cout << "\nGeneracion " << gen + 1 << "\n-----------------------------" << endl;
+        for (int i = 0; i < n_nests; ++i) {
+            vector<int> cuckoo = levy_mutation(nests[i]);
+            int cuckoo_score = fitness(cuckoo);
+            int j = rand() % n_nests;
+            if (cuckoo_score > scores[j]) {
+                cout << "Nido " << j << " reemplazado. Valor anterior: " << scores[j] << ", nuevo valor: " << cuckoo_score << endl;
+                nests[j] = cuckoo;
+                scores[j] = cuckoo_score;
             }
         }
 
-        // Descubrimiento de nidos con probabilidad pa
-        for (int i = 0; i < num_nests; ++i) {
-            if (uniform(rng) < pa) {
-                vector<int> x(num_items);
-                for (int j = 0; j < num_items; ++j)
-                    x[j] = binary(rng);
-                nests[i] = {x, evaluate(x)};
+        int n_replace = (int)(pa * n_nests);
+        vector<pair<int, int>> indexed_scores;
+        for (int i = 0; i < n_nests; ++i)
+            indexed_scores.push_back({scores[i], i});
+
+        sort(indexed_scores.begin(), indexed_scores.end());
+        for (int k = 0; k < n_replace; ++k) {
+            int idx = indexed_scores[k].second;
+            nests[idx] = random_solution();
+            scores[idx] = fitness(nests[idx]);
+            cout << "Nido " << idx << " reemplazado aleatoriamente por bajo rendimiento." << endl;
+        }
+
+        int best = max_element(scores.begin(), scores.end()) - scores.begin();
+        int total_weight = 0;
+        cout << "Contenido de mejor nido: [ ";
+        for (int i = 0; i < n_items; ++i) {
+            if (nests[best][i]) {
+                cout << items[i].id << " ";
+                total_weight += items[i].weight;
             }
         }
+        cout << "]\nMejor valor: " << scores[best] << ", Peso: " << total_weight << endl;
     }
 
-    // Mostrar solución
-    cout << "Mejor valor: " << best.fitness << endl;
-    cout << "Objetos seleccionados: ";
-    for (int i = 0; i < num_items; ++i) {
-        if (best.x[i]) cout << i << " ";
-    }
-    cout << endl ;
+    auto end = high_resolution_clock::now();
+    auto duration = duration_cast<milliseconds>(end - start);
+
+    int best = max_element(scores.begin(), scores.end()) - scores.begin();
+    cout << "\n===============================" << endl;
+    cout << "\n✅ Mejor solucion encontrada:" << endl;
+    cout << "Valor total: " << scores[best] << endl;
+    cout << "Peso total: ";
+    int final_weight = 0;
+    for (int i = 0; i < n_items; ++i)
+        if (nests[best][i]) final_weight += items[i].weight;
+    cout << final_weight << endl;
+    cout << "Tiempo de ejecucion: " << duration.count() << " ms" << endl;
+    cout << "\n===============================\n";
 
     return 0;
 }
