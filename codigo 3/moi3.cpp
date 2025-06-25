@@ -58,17 +58,25 @@ public:
     }
 
     std::vector<int> levyFlight(const std::vector<int>& current_solution) {
+        // Formular Levy Flight
         double beta = 1.5;
-        double sigma = std::pow(std::tgamma(1 + beta) * std::sin(M_PI * beta / 2) /
-                                 std::tgamma((1 + beta) / 2) * std::pow(M_PI, 0.5), 1.0 / beta);
+        double numerator = std::tgamma(1.0 + beta) * std::sin(M_PI * beta / 2.0);
+        double denominator = std::tgamma((1.0 + beta) / 2.0) * beta * std::pow(2.0, (beta - 1.0) / 2.0);
+        double sigma = std::pow(numerator / denominator, 1.0 / beta);
+        
+        // Construir nueva solucion
         std::vector<int> new_solution(current_solution.size());
         for (size_t i = 0; i < current_solution.size(); ++i) {
-            double levy = normal_dis(gen) * sigma;
+            double u = normal_dis(gen) * sigma;
+            double v = normal_dis(gen);
+            double levy = u / std::pow(std::abs(v), 1.0 / beta);
             double new_value = current_solution[i] + alfa * levy;
+            // ADAPTACION: Convertir la nueva solucion de continua a discreta {0,1}
             double sigmoide = 1.0 / (1.0 + std::exp(-std::abs(new_value)));
             double r = dis(gen);
             new_solution[i] = (r < sigmoide) ? 1 : 0;
         }
+        
         return new_solution;
     }
 

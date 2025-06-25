@@ -84,16 +84,20 @@ public:
     }
 
     // Generar una solución mediante Levy flights
+// Generar una solución mediante Levy flights
     std::vector<int> levyFlight(const std::vector<int>& current_solution) {
         // Formular Levy Flight
         double beta = 1.5;
-        double sigma = std::pow(std::tgamma(1 + beta) * std::sin(M_PI * beta / 2) / 
-                               std::tgamma((1 + beta) / 2) * std::pow(M_PI, 0.5), 1.0/beta);
+        double numerator = std::tgamma(1.0 + beta) * std::sin(M_PI * beta / 2.0);
+        double denominator = std::tgamma((1.0 + beta) / 2.0) * beta * std::pow(2.0, (beta - 1.0) / 2.0);
+        double sigma = std::pow(numerator / denominator, 1.0 / beta);
         
         // Construir nueva solucion
         std::vector<int> new_solution(current_solution.size());
         for (size_t i = 0; i < current_solution.size(); ++i) {
-            double levy = normal_dis(gen) * sigma;  
+            double u = normal_dis(gen) * sigma;
+            double v = normal_dis(gen);
+            double levy = u / std::pow(std::abs(v), 1.0 / beta);
             double new_value = current_solution[i] + alfa * levy;
             // ADAPTACION: Convertir la nueva solucion de continua a discreta {0,1}
             double sigmoide = 1.0 / (1.0 + std::exp(-std::abs(new_value)));
@@ -102,7 +106,6 @@ public:
         }
         
         return new_solution;
-        
     }
 
     // Algoritmo Cuckoo Search
@@ -276,7 +279,6 @@ int main() {
     cuckoo.printEvolution(fitness_evolution);
     
     
-    /*
     // Ejecutar Cuckoo Search 10 veces
     std::vector<std::vector<int>> all_solutions;
     std::vector<std::vector<int>> all_evolutions;
@@ -293,30 +295,49 @@ int main() {
     for (size_t i = 0; i < all_times.size(); ++i) {
         std::cout << all_times[i] << ",";
     }
-    */
     
     
     // Ejecutar fuerza bruta para comparación
-    /* std::cout << "\n=== FUERZA BRUTA (SOLUCIÓN ÓPTIMA) ===" << std::endl;
+    std::cout << "\n=== FUERZA BRUTA (SOLUCIÓN ÓPTIMA) ===" << std::endl;
     auto [optimal_solutions, optimal_value, duration_bruteforce] = cuckoo.bruteForceSolution();
     // Imprimir fuerza bruta
     std::cout << duration_bruteforce.count() << " segundos" << std::endl;
     std::cout << "Valor óptimo: " << optimal_value << std::endl;
     std::cout << "NúmerSo de soluciones óptimas encontradas: " << optimal_solutions.size() << std::endl;
-    cuckoo.printSolution(optimal_solutions[0]); */
+    cuckoo.printSolution(optimal_solutions[0]); 
     
     
-    /*
-    // Ejecutar fuerza bruta 10 veces
-    std::vector<double> all_times_bruteforce;
-    for (int i = 0; i < 10; ++i) {
+    
+    // Ejecutar fuerza bruta 10,000 veces
+    int contador_optimos = 0;
+    std::vector<double> tiempos_bruteforce;
+
+    for (int i = 0; i < 10000; ++i) {
         auto [optimal_solutions, optimal_value, duration_bruteforce] = cuckoo.bruteForceSolution();
-        all_times.push_back(duration_bruteforce.count());
+        tiempos_bruteforce.push_back(duration_bruteforce.count());
+        if (optimal_value == 200) {
+            contador_optimos++;
+        }
     }
-    for (size_t i = 0; i < all_times_bruteforce.size(); ++i) {
-        std::cout << all_times_bruteforce[i] << ",";
+
+    // Estadísticas
+    double suma_tiempo = std::accumulate(tiempos_bruteforce.begin(), tiempos_bruteforce.end(), 0.0);
+    double promedio_tiempo = suma_tiempo / tiempos_bruteforce.size();
+
+    double varianza = 0.0;
+    for (const auto& t : tiempos_bruteforce) {
+        varianza += (t - promedio_tiempo) * (t - promedio_tiempo);
     }
-    */
+    double std_dev = std::sqrt(varianza / tiempos_bruteforce.size());
+
+    // Mostrar resultados
+    std::cout << "\n=== RESULTADOS DE 10,000 EJECUCIONES DE FUERZA BRUTA ===\n";
+    std::cout << "Tiempo promedio: " << promedio_tiempo << " segundos\n";
+    std::cout << "Desviación estándar: " << std_dev << " segundos\n";
+    std::cout << "Cantidad veces que se alcanzó el óptimo (200): " << contador_optimos << "/10000\n";
+    std::cout << "Cantidad veces que NO se alcanzó el óptimo: " << (10000 - contador_optimos) << "/10000\n";
+
+    
 
     return 0;
 }

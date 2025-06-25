@@ -54,18 +54,27 @@ public:
         return nest;
     }
 
+    // Generar una solución mediante Levy flights
     std::vector<int> levyFlight(const std::vector<int>& current_solution) {
+        // Formular Levy Flight
         double beta = 1.5;
-        double sigma = std::pow(std::tgamma(1 + beta) * std::sin(M_PI * beta / 2) /
-                                 std::tgamma((1 + beta) / 2) * std::pow(M_PI, 0.5), 1.0 / beta);
+        double numerator = std::tgamma(1.0 + beta) * std::sin(M_PI * beta / 2.0);
+        double denominator = std::tgamma((1.0 + beta) / 2.0) * beta * std::pow(2.0, (beta - 1.0) / 2.0);
+        double sigma = std::pow(numerator / denominator, 1.0 / beta);
+        
+        // Construir nueva solucion
         std::vector<int> new_solution(current_solution.size());
         for (size_t i = 0; i < current_solution.size(); ++i) {
-            double levy = normal_dis(gen) * sigma;
+            double u = normal_dis(gen) * sigma;
+            double v = normal_dis(gen);
+            double levy = u / std::pow(std::abs(v), 1.0 / beta);
             double new_value = current_solution[i] + alfa * levy;
+            // ADAPTACION: Convertir la nueva solucion de continua a discreta {0,1}
             double sigmoide = 1.0 / (1.0 + std::exp(-std::abs(new_value)));
             double r = dis(gen);
             new_solution[i] = (r < sigmoide) ? 1 : 0;
         }
+        
         return new_solution;
     }
 
@@ -95,37 +104,15 @@ public:
                 j = nest_dis(gen);
             } while (j == i);
 
-            std::string decision = "Rechazada";
-            int fitness_j_before = fitness_values[j];
             if (new_fitness > fitness_values[j]) {
                 nests[j] = new_nest;
                 fitness_values[j] = new_fitness;
-                decision = "Aceptada";
             }
 
             int new_best_idx = std::max_element(fitness_values.begin(), fitness_values.end()) - fitness_values.begin();
-            if (fitness_values[new_best_idx] > best_fitness ) {
+            if (fitness_values[new_best_idx] > best_fitness) {
                 best_fitness = fitness_values[new_best_idx];
                 best_nest = nests[new_best_idx];
-
-                std::cout << "\nNuevo mejor fitness: " << best_fitness << " encontrado en la iteracion " << iteration << std::endl;
-                for (int n = 0; n < n_nests; ++n) {
-                    std::cout << "Nido " << n << ": [";
-                    for (size_t b = 0; b < nests[n].size(); ++b) {
-                        std::cout << nests[n][b];
-                        if (b < nests[n].size() - 1) std::cout << ", ";
-                    }
-                    std::cout << "] -> Fitness: " << fitness_values[n] << std::endl;
-                }
-                std::cout << "Se uso el nido " << i << " para crear una nueva solucion (";
-                for (size_t b = 0; b < new_nest.size(); ++b) {
-                    std::cout << new_nest[b];
-                    if (b < new_nest.size() - 1) std::cout << ", ";
-                }
-                std::cout << "). Comparado con nido " << j
-                          << ", decision: " << decision
-                          << " (fitness nuevo: " << new_fitness
-                          << ", fitness j previo: " << fitness_j_before << ")" << std::endl;
             }
 
             int num_replacements = static_cast<int>(pa * n_nests);
@@ -146,34 +133,6 @@ public:
         std::chrono::duration<double> duration = end - start;
         return {best_nest, fitness_evolution, duration};
     }
-
-    void printSolution(const std::vector<int>& solution) {
-        std::cout << "Solucion: [";
-        for (size_t i = 0; i < solution.size(); ++i) {
-            std::cout << solution[i];
-            if (i < solution.size() - 1) std::cout << ", ";
-        }
-        std::cout << "]" << std::endl;
-
-        int total_weight = 0, total_value = 0;
-        std::cout << "Objetos seleccionados: ";
-        for (size_t i = 0; i < solution.size(); ++i) {
-            if (solution[i] == 1) {
-                std::cout << i << "(p=" << items[i].peso << ",v=" << items[i].valor << "), ";
-                total_weight += items[i].peso;
-                total_value += items[i].valor;
-            }
-        }
-        std::cout << std::endl << "Peso total: " << total_weight << "/" << capacity << std::endl;
-        std::cout << "Valor total: " << total_value << std::endl;
-    }
-
-    void printEvolution(const std::vector<int>& evolution) {
-        for (size_t i = 0; i < evolution.size(); ++i) {
-            std::cout << evolution[i] << ",";
-        }
-        std::cout << std::endl;
-    }
 };
 
 int main() {
@@ -187,23 +146,47 @@ int main() {
     double pa = 0.25;
     double a = 1.0;
 
-    std::cout << std::endl << "=== PROBLEMA ===" << std::endl;
-    std::cout << "Capacidad de la mochila: " << capacity;
-    std::cout << "\nObjetos disponibles:" << std::endl;
-    for (size_t i = 0; i < items.size(); ++i) {
-        std::cout << "Item " << i << ": peso=" << items[i].peso 
-                  << ", valor=" << items[i].valor << std::endl;
+    int count_optimal = 0;
+    int count_non_optimal = 0;
+    std::vector<double> tiempos;
+    std::vector<int> mejores_fitness;
+
+    const int ejecuciones = 10000;
+    const int optimo_conocido = 200;
+
+    for (int i = 0; i < ejecuciones; ++i) {
+        CuckooSearchKnapsack cuckoo(items, capacity, nests, maxGenerations, pa, a);
+        auto [best_solution, fitness_evolution, duration] = cuckoo.cuckooSearch();
+        int mejor = fitness_evolution.back();
+        mejores_fitness.push_back(mejor);
+        tiempos.push_back(duration.count());
+        if (mejor == optimo_conocido)
+            count_optimal++;
+        else
+            count_non_optimal++;
     }
 
-    CuckooSearchKnapsack cuckoo(items, capacity, nests, maxGenerations, pa, a);
+    double sum = std::accumulate(tiempos.begin(), tiempos.end(), 0.0);
+    double mean = sum / tiempos.size();
+    double sq_sum = std::inner_product(tiempos.begin(), tiempos.end(), tiempos.begin(), 0.0);
+    double stddev = std::sqrt(sq_sum / tiempos.size() - mean * mean);
 
-    std::cout << "\n=== CUCKOO SEARCH ===" << std::endl;
-    auto [best_solution, fitness_evolution, duration_cuckoo] = cuckoo.cuckooSearch();
-    std::cout << "=======================" << std::endl;
-    std::cout << "Tiempo de ejecucion: " << std::fixed << std::setprecision(4) << duration_cuckoo.count() << " segundos" << std::endl;
-    cuckoo.printSolution(best_solution);
-    std::cout << "=======================" << std::endl;
-    cuckoo.printEvolution(fitness_evolution);
+    double avg_fitness = std::accumulate(mejores_fitness.begin(), mejores_fitness.end(), 0.0) / mejores_fitness.size();
+    double sq_fit = std::inner_product(mejores_fitness.begin(), mejores_fitness.end(), mejores_fitness.begin(), 0.0);
+    double stddev_fit = std::sqrt(sq_fit / mejores_fitness.size() - avg_fitness * avg_fitness);
+
+    double error_abs = std::abs(optimo_conocido - avg_fitness);
+    double error_rel = (optimo_conocido == 0) ? 0 : (error_abs / optimo_conocido) * 100;
+
+    std::cout << "\n======= RESULTADOS DE " << ejecuciones << " EJECUCIONES =======" << std::endl;
+    std::cout << "Tiempo promedio: " << mean << " segundos" << std::endl;
+    std::cout << "Desviacion estandar (tiempo): " << stddev << " segundos" << std::endl;
+    std::cout << "Fitness promedio: " << avg_fitness << std::endl;
+    std::cout << "Desviacion estandar (fitness): " << stddev_fit << std::endl;
+    std::cout << "Error absoluto respecto al optimo: " << error_abs << std::endl;
+    std::cout << "Error relativo respecto al optimo: " << error_rel << "%" << std::endl;
+    std::cout << "Cantidad veces que se alcanzo el optimo (" << optimo_conocido << "): " << count_optimal << "/" << ejecuciones << std::endl;
+    std::cout << "Cantidad veces que NO se alcanzo el optimo: " << count_non_optimal << "/" << ejecuciones << std::endl;
 
     return 0;
 }
